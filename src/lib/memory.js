@@ -1,5 +1,5 @@
-
-      import { getDb } from "./db.js";
+import { getDb } from "./db.js";
+import { logger } from "./logger.js";
 
 const COL = "memory_messages";
 
@@ -15,7 +15,16 @@ export async function addTurn({ mongoUri, platform, userId, chatId, role, text }
   };
 
   if (!db) return; // allow bot to run without DB
-  await db.collection(COL).insertOne(doc);
+
+  try {
+    await db.collection(COL).insertOne(doc);
+  } catch (e) {
+    logger.error("db.write_failed", {
+      collection: COL,
+      op: "insertOne",
+      err: logger.safeErr(e),
+    });
+  }
 }
 
 export async function getRecentTurns({ mongoUri, platform, userId, chatId, limit = 14 }) {
@@ -28,15 +37,23 @@ export async function getRecentTurns({ mongoUri, platform, userId, chatId, limit
   };
   if (chatId) q.chatId = String(chatId);
 
-  const rows = await db
-    .collection(COL)
-    .find(q)
-    .sort({ ts: -1 })
-    .limit(limit)
-    .toArray();
+  try {
+    const rows = await db
+      .collection(COL)
+      .find(q)
+      .sort({ ts: -1 })
+      .limit(limit)
+      .toArray();
 
-  // return chronological
-  return rows.reverse().map((r) => ({ role: r.role, text: r.text }));
+    return rows.reverse().map((r) => ({ role: r.role, text: r.text }));
+  } catch (e) {
+    logger.error("db.read_failed", {
+      collection: COL,
+      op: "find",
+      err: logger.safeErr(e),
+    });
+    return [];
+  }
 }
 
 export async function clearUserMemory({ mongoUri, platform, userId, chatId }) {
@@ -46,5 +63,13 @@ export async function clearUserMemory({ mongoUri, platform, userId, chatId }) {
   const q = { platform, userId: String(userId) };
   if (chatId) q.chatId = String(chatId);
 
-  await db.collection(COL).deleteMany(q);
+  try {
+    await db.collection(COL).deleteMany(q);
+  } catch (e) {
+    logger.error("db.write_failed", {
+      collection: COL,
+      op: "deleteMany",
+      err: logger.safeErr(e),
+    });
+  }
 }
