@@ -3,13 +3,12 @@
   "commands": [
     {
       "command": "/help",
-      "description": "Shows usage details, supported TikTok URL formats, common errors, and fallback behavior.",
+      "description": "Shows supported TikTok URL formats, troubleshooting, HTTP 429 guidance, and fallback behavior.",
       "usage": "/help",
       "examples": [
         "User: /help → Bot: How to use: 1) Paste a TikTok URL…"
       ],
-      "example": "User: /help → Bot: How to use: 1) Paste a TikTok URL…",
-      "notes": "If the video upload fails, the bot will fall back to document, then to sending the direct link."
+      "notes": "Fallback behavior is always: send video → fallback document → fallback direct link."
     },
     {
       "command": "/start",
@@ -18,8 +17,7 @@
       "examples": [
         "User: /start → Bot: Send me a TikTok link and I’ll download it…"
       ],
-      "example": "User: /start → Bot: Send me a TikTok link and I’ll download it…",
-      "notes": "Works in groups and private chats. Paste a TikTok link to trigger a download."
+      "notes": "Paste a TikTok link to download. If the downloader API is rate-limited (HTTP 429), the bot may ask you to wait and will cooldown briefly."
     }
   ],
   "aiMessages": [
@@ -34,6 +32,14 @@
     {
       "role": "assistant",
       "content": "⚠️ Diagnostic\n\nServer logs show a runtime problem\nI checked your recent Server logs and found lines that likely explain the failure.\n\nWhat I saw:\n- error_code: 409,\n- {\"t\":\"2026-03-02T07:26:41.150Z\",\"level\":\"warn\",\"msg\":\"polling.failure\",\"err\":\"Call to 'getUpdates' failed! (409: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running)\",\"backoffMs\":2000,\"is409\":true}\n- [grammY runner] Error while fetching updates:\n- [grammY runner] GrammyError: Call to 'getUpdates' failed! (409: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running)\n- at toGrammyError (/opt/render/project/src/node_modules/grammy/out/core/error.js:47:12)\n- {\"t\":\"2026-03-02T07:26:46.311Z\",\"level\":\"warn\",\"msg\":\"polling.failure\",\"err\":\"Call to 'getUpdates' failed! (409: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running)\",\"backoffMs\":2000,\"is409\":true}\n- {\"t\":\"2026-03-02T07:29:57.854Z\",\"level\":\"warn\",\"msg\":\"rapidapi.tiktok.http_error\",\"requestId\":\"0390ec6272b2b19cad7427fa\",\"status\":429,\"ms\":34}\n- at async worker (/opt/render/project/src/node_modules/@grammyjs/runner/out/source.js:63:31)\n\nIf you want, tell me what you want to fix (e.g. “make the bot start on the Server”) and I can try to update the code."
+    },
+    {
+      "role": "user",
+      "content": "TikTok downloader API error (HTTP 429). Try again later.\n\nFix this for me"
+    },
+    {
+      "role": "assistant",
+      "content": "Implemented robust downloader API 429 handling with classification, controlled retries (backoff + jitter + Retry-After), per-user cooldown (MongoDB-backed when MONGODB_URI is set, in-memory fallback otherwise), plus global/user RPS guards and per-user in-flight protection. Updated /help, DOCS.md, .env.sample, and Bot Profile while preserving existing link detection and the media send fallback order (video → document → link) with added fallback logs.\n\nFiles touched (12): .env.sample, DOCS.md, package.json, src/commands/help.js, src/features/tiktokHandler.js, src/index.js…\nValidation: ✅ project passes syntax/basic checks after this edit."
     }
   ],
   "createdBy": "69a43421f09020726e251d28",
@@ -339,7 +345,7 @@
       "runId": "fd58c66d-d862-4575-9d22-e7b0f5773d66:mm8v0gwh:kkvsqv",
       "lastUserMessage": "TikTok downloader API error (HTTP 429). Try again later.\n\nFix this for me",
       "startedAt": "2026-03-02T06:58:59.292Z",
-      "updatedAt": "2026-03-02T07:33:24.208Z",
+      "updatedAt": "2026-03-02T07:33:24.445Z",
       "message": "Syncing environment template with used env variables…",
       "commands": [
         {
@@ -623,7 +629,7 @@
     "runId": "fd58c66d-d862-4575-9d22-e7b0f5773d66:mm8v0gwh:kkvsqv",
     "lastUserMessage": "TikTok downloader API error (HTTP 429). Try again later.\n\nFix this for me",
     "startedAt": "2026-03-02T06:58:59.292Z",
-    "updatedAt": "2026-03-02T07:33:24.208Z",
+    "updatedAt": "2026-03-02T07:33:24.445Z",
     "message": "Syncing environment template with used env variables…",
     "commands": [
       {
@@ -960,6 +966,76 @@
       "example": "30000",
       "isSecret": false,
       "required": false
+    },
+    {
+      "key": "MONGODB_URI",
+      "title": "MongoDB URI",
+      "description": "Optional MongoDB connection string used to persist per-user downloader cooldown state so it survives restarts.",
+      "usage": "src/lib/db.js and src/features/tiktokHandler.js",
+      "howToGet": "Create a MongoDB database (Atlas or similar) and copy the connection URI.",
+      "example": "mongodb+srv://user:pass@cluster/dbname?retryWrites=true&w=majority",
+      "isSecret": true,
+      "required": false
+    },
+    {
+      "key": "TIKTOK_MAX_RETRIES",
+      "title": "TikTok Downloader Max Retries",
+      "description": "How many times to retry transient downloader API failures like HTTP 429/5xx/timeouts.",
+      "usage": "Used by src/services/rapidapiTikTok.js",
+      "howToGet": "Set an integer.",
+      "example": "2",
+      "isSecret": false,
+      "required": false
+    },
+    {
+      "key": "TIKTOK_RETRY_BASE_MS",
+      "title": "TikTok Retry Base Delay",
+      "description": "Base delay (ms) for exponential backoff retries when the downloader API is temporarily failing.",
+      "usage": "Used by src/services/rapidapiTikTok.js",
+      "howToGet": "Set an integer in milliseconds.",
+      "example": "800",
+      "isSecret": false,
+      "required": false
+    },
+    {
+      "key": "TIKTOK_RETRY_MAX_MS",
+      "title": "TikTok Retry Max Delay",
+      "description": "Max delay (ms) cap for exponential backoff retries.",
+      "usage": "Used by src/services/rapidapiTikTok.js",
+      "howToGet": "Set an integer in milliseconds.",
+      "example": "8000",
+      "isSecret": false,
+      "required": false
+    },
+    {
+      "key": "TIKTOK_COOLDOWN_MS",
+      "title": "TikTok 429 Cooldown Window",
+      "description": "Per-user cooldown duration (ms) applied after HTTP 429 to avoid hammering the downloader API.",
+      "usage": "Used by src/features/tiktokHandler.js (persisted to MongoDB if available).",
+      "howToGet": "Set an integer in milliseconds.",
+      "example": "60000",
+      "isSecret": false,
+      "required": false
+    },
+    {
+      "key": "TIKTOK_GLOBAL_RPS",
+      "title": "TikTok Global RPS",
+      "description": "Global requests-per-second limiter for downloader API calls.",
+      "usage": "Used by src/features/tiktokHandler.js via src/utils/rateLimit.js token bucket.",
+      "howToGet": "Set an integer.",
+      "example": "5",
+      "isSecret": false,
+      "required": false
+    },
+    {
+      "key": "TIKTOK_USER_RPS",
+      "title": "TikTok User RPS",
+      "description": "Per-user requests-per-second limiter for downloader API calls.",
+      "usage": "Used by src/features/tiktokHandler.js via src/utils/rateLimit.js token bucket.",
+      "howToGet": "Set an integer.",
+      "example": "1",
+      "isSecret": false,
+      "required": false
     }
   ],
   "commandDocs": [
@@ -970,16 +1046,16 @@
       "examples": [
         "User: /start → Bot: Send me a TikTok link and I’ll download it…"
       ],
-      "notes": "Works in groups and private chats. Paste a TikTok link to trigger a download."
+      "notes": "Paste a TikTok link to download. If the downloader API is rate-limited (HTTP 429), the bot may ask you to wait and will cooldown briefly."
     },
     {
       "command": "/help",
-      "description": "Shows usage details, supported TikTok URL formats, common errors, and fallback behavior.",
+      "description": "Shows supported TikTok URL formats, troubleshooting, HTTP 429 guidance, and fallback behavior.",
       "usage": "/help",
       "examples": [
         "User: /help → Bot: How to use: 1) Paste a TikTok URL…"
       ],
-      "notes": "If the video upload fails, the bot will fall back to document, then to sending the direct link."
+      "notes": "Fallback behavior is always: send video → fallback document → fallback direct link."
     }
   ]
 }
